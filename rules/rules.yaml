@@ -1,4 +1,5 @@
-# AutoMarshal – example rules.yaml
+# AutoMarshal – rules.yaml
+# Track: Silverstone International Circuit
 #
 # Each rule has three fields:
 #   name        – Human-readable label (used in logs).
@@ -16,6 +17,10 @@
 #                   light         Light panel identifier (string)
 #                   radio_drivers Message for the Drivers channel
 #                   radio_rc      Message to initiate on the RC channel
+#
+# Voice-triggered global states use a `trigger` field in place of `if`.
+# These are not evaluated by the telemetry rule engine; they require a
+# separate voice-recognition handler to activate them.
 
 - name: "Stopped car – Turn 4"
   if: "car.velocity_kmh < 10 and car.track_position == 'Turn 4'"
@@ -43,3 +48,69 @@
   then:
     light: "Sector_1_Blue"
     radio_rc: "Blue flag. Car approaching from behind."
+
+# ── Silverstone – Sector Automations ─────────────────────────────────────────
+
+# Rule 1 – Slow car / White flag
+# Triggers when a car's running sector time exceeds 130% of its last completed
+# sector time AND the car is still moving above 40 km/h.
+# The light identifier is resolved per car.sector_id by the hardware layer.
+- name: "Slow car – White flag (Rule 1)"
+  if: "car.last_sector_time > 0 and car.current_sector_time > car.last_sector_time * 1.3 and car.velocity_kmh > 40"
+  then:
+    light: "Sector_{sector_id}_White"
+    radio_rc: "Race control, Sector {sector_id}, car {car_no} is slow."
+
+# Rule 2 – Incident / Yellow flag
+# Triggers when a car's running sector time exceeds 180% of its last completed
+# sector time OR the car is effectively stationary (< 10 km/h).
+- name: "Incident – Yellow flag (Rule 2)"
+  if: "(car.last_sector_time > 0 and car.current_sector_time > car.last_sector_time * 1.8) or car.velocity_kmh < 10"
+  then:
+    light: "Sector_{sector_id}_Yellow"
+    radio_rc: "Race control, Sector {sector_id}, caution car {car_no} is stationary."
+    radio_drivers: "Caution Turn {turn_no}, Caution Turn {turn_no}."
+
+# Rule 3 – Blue flag / Faster-class car approaching
+# Evaluated against the faster (approaching) car: triggers when that car is
+# within 2.0 s of the car ahead (which receives the blue flag).
+# Note: full class comparison (car_behind.class > car_ahead.class) requires
+# the hardware layer to expose a car_class_rank attribute; the gap condition
+# below is the primary trigger available from current telemetry.
+# Radio is intentionally silent for Blue Flags per hazard-only radio policy.
+- name: "Blue flag – faster class approaching (Rule 3)"
+  if: "car.gap_to_car_ahead is not None and car.gap_to_car_ahead < 2.0"
+  then:
+    light: "Sector_{sector_id}_Blue"
+
+# ── Silverstone – Global States (voice-triggered) ─────────────────────────────
+# The entries below use `trigger` instead of `if`; they are not evaluated by
+# the telemetry rule engine and require a separate voice-recognition handler.
+
+- name: "Red flag"
+  trigger: "Voice: 'Red flag red flag'"
+  then:
+    light: "ALL_RED"
+    radio_drivers: "RED FLAG. RED FLAG. RETURN TO PITS."
+    # Cancels all active YELLOW, WHITE, and BLUE sector flags.
+
+- name: "Safety car lights out"
+  trigger: "Voice: 'Safety car lights out'"
+  then:
+    radio_drivers: "Lights are out on the safety car. Leader maintain speed. No overtaking ahead of the control line."
+
+- name: "Restart – Green flag"
+  trigger: "Voice: 'Green flag green flag'"
+  then:
+    light: "ALL_GREEN"          # Spec: display for 15 s, then off
+    radio_drivers: "GREEN FLAG. GREEN FLAG."
+    # Resumes sector automations after green flag is displayed.
+
+- name: "Chequered flag – Race mode"
+  trigger: "Voice: 'Chequered flag'"
+  then:
+    light: "ALL_CHEQUERED"
+    # Race mode: waits for the leader to cross the finish line before displaying.
+    # Practice mode: waits for any car to cross the finish line.
+
+
