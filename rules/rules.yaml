@@ -1,0 +1,45 @@
+# AutoMarshal – example rules.yaml
+#
+# Each rule has three fields:
+#   name        – Human-readable label (used in logs).
+#   if          – Python boolean expression evaluated against a `car` object.
+#                 Available attributes on `car`:
+#                   car.car_id              str   Transponder / car number
+#                   car.car_class           str   Racing class (e.g. "GT3")
+#                   car.track_position      str   Named position (e.g. "Turn 4")
+#                   car.sector_id           int   Zero-based sector index
+#                   car.velocity_kmh        float Speed in km/h
+#                   car.current_sector_time float Elapsed sector time (s)
+#                   car.last_sector_time    float Previous completed sector (s)
+#                   car.gap_to_car_ahead    float Gap in seconds (or None)
+#   then        – Actions to execute when the condition is True:
+#                   light         Light panel identifier (string)
+#                   radio_drivers Message for the Drivers channel
+#                   radio_rc      Message to initiate on the RC channel
+
+- name: "Stopped car – Turn 4"
+  if: "car.velocity_kmh < 10 and car.track_position == 'Turn 4'"
+  then:
+    light: "Sector_4_Yellow"
+    radio_drivers: "Caution Turn 4. Caution Turn 4."
+    radio_rc: "Car traveling slowly, Turn 4."
+
+- name: "Very slow car – Sector 1"
+  if: "car.velocity_kmh < 15 and car.sector_id == 0"
+  then:
+    light: "Sector_1_Yellow"
+    radio_drivers: "Caution Sector 1. Caution Sector 1."
+    radio_rc: "Slow car, Sector 1."
+
+- name: "GT3 class slow in Sector 2"
+  if: "car.car_class == 'GT3' and car.velocity_kmh < 20 and car.sector_id == 1"
+  then:
+    light: "Sector_2_Yellow"
+    radio_drivers: "Caution Sector 2. GT3 car slow."
+    radio_rc: "GT3 slow car Sector 2."
+
+- name: "Blue flag candidate"
+  if: "car.gap_to_car_ahead is not None and car.gap_to_car_ahead < 1.5"
+  then:
+    light: "Sector_1_Blue"
+    radio_rc: "Blue flag. Car approaching from behind."
